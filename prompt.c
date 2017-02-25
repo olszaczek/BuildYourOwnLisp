@@ -1,18 +1,10 @@
 #include <stdio.h>
+#include <stdlib.h>
 
-#define BUFFER_SIZE 2048
-static char userInputBuffer[BUFFER_SIZE];
+#include <editline/readline.h>
 
-void outputPrompt() {
-    fputs("lispy> ", stdout);
-}
-
-void readInput() {
-    fgets(userInputBuffer, BUFFER_SIZE, stdin);
-}
-
-void echoInput() {
-    printf("No, you're a %s", userInputBuffer);
+static void echoInput(char* input) {
+    printf("No, you're a %s\n", input);
 }
 
 int main(int argc, char** argv) {
@@ -20,9 +12,10 @@ int main(int argc, char** argv) {
     puts("Press Ctrl+c to Exit\n");
 
     while(1) {
-        outputPrompt();
-        readInput();
-        echoInput();
+        char* input = readline("lispy> ");
+        add_history(input);
+        echoInput(input);
+        free(input);
     }
     return 0;
 }
