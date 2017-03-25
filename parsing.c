@@ -167,6 +167,122 @@ void lispval_print(lispval* v) {
 
 void lispval_println(lispval* v) { lispval_print(v); putchar('\n'); }
 
+
+lispval* lispval_pop(lispval* v, int i) {
+  /* Find the item at "i" */
+  lispval* x = v->cell[i];
+
+  /* Shift memory after the item at "i" over the top */
+  memmove(&v->cell[i], &v->cell[i+1],
+    sizeof(lispval*) * (v->count-i-1));
+
+  /* Decrease the count of items in the list */
+  v->count--;
+
+  /* Reallocate the memory used */
+  v->cell = realloc(v->cell, sizeof(lispval*) * v->count);
+  return x;
+}
+
+lispval* lispval_take(lispval* v, int i) {
+  lispval* x = lispval_pop(v, i);
+  lispval_del(v);
+  return x;
+}
+
+long minl(long a, long b) {
+  return a > b ? b : a;
+}
+
+long maxl(long a, long b) {
+  return a > b ? a : b;
+}
+
+lispval* builtin_op(lispval* a, char* op) {
+
+  /* Ensure all arguments are numbers */
+  for (int i = 0; i < a->count; i++) {
+    if (a->cell[i]->type != LISPVAL_NUM) {
+      lispval_del(a);
+      return lispval_err("Cannot operate on non-number!");
+    }
+  }
+
+  /* Pop the first element */
+  lispval* x = lispval_pop(a, 0);
+
+  /* If no arguments and sub then perform unary negation */
+  if ((strcmp(op, "-") == 0) && a->count == 0) {
+    x->num = -x->num;
+  }
+
+  /* While there are still elements remaining */
+  while (a->count > 0) {
+
+    /* Pop the next element */
+    lispval* y = lispval_pop(a, 0);
+
+    if (strcmp(op, "+") == 0) { x->num += y->num; }
+    if (strcmp(op, "-") == 0) { x->num -= y->num; }
+    if (strcmp(op, "*") == 0) { x->num *= y->num; }
+    if (strcmp(op, "/") == 0) {
+      if (y->num == 0) {
+        lispval_del(x); lispval_del(y);
+        x = lispval_err("Division By Zero!"); break;
+      }
+      x->num /= y->num;
+    }
+    if (strcmp(op, "%") == 0) { x->num %= y->num; }
+    if (strcmp(op, "^") == 0) { x->num = powl(x->num, y->num); }
+    if (strcmp(op, "min") == 0) { x->num = minl(x->num, y->num); }
+    if (strcmp(op, "max") == 0) { x->num = maxl(x->num, y->num); }
+
+    lispval_del(y);
+  }
+
+  lispval_del(a); return x;
+}
+
+lispval* lispval_eval(lispval* v);
+
+lispval* lispval_eval_sexpr(lispval* v) {
+
+  /* Evaluate Children */
+  for (int i = 0; i < v->count; i++) {
+    v->cell[i] = lispval_eval(v->cell[i]);
+  }
+
+  /* Error Checking */
+  for (int i = 0; i < v->count; i++) {
+    if (v->cell[i]->type == LISPVAL_ERR) { return lispval_take(v, i); }
+  }
+
+  /* Empty Expression */
+  if (v->count == 0) { return v; }
+
+  /* Single Expression */
+  if (v->count == 1) { return lispval_take(v, 0); }
+
+  /* Ensure First Element is Symbol */
+  lispval* f = lispval_pop(v, 0);
+  if (f->type != LISPVAL_SYM) {
+    lispval_del(f); lispval_del(v);
+    return lispval_err("S-expression Does not start with symbol!");
+  }
+
+  /* Call builtin with operator */
+  lispval* result = builtin_op(v, f->sym);
+  lispval_del(f);
+  return result;
+}
+
+lispval* lispval_eval(lispval* v) {
+  /* Evaluate Sexpressions */
+  if (v->type == LISPVAL_SEXPR) { return lispval_eval_sexpr(v); }
+  /* All other lval types remain the same */
+  return v;
+}
+
 /*
 static int numberOfNodes(mpc_ast_t* tree) {
   if (tree->children_num == 0) {
@@ -183,75 +299,11 @@ static int numberOfNodes(mpc_ast_t* tree) {
 }
 */
 
-long minl(long a, long b) {
-  return a > b ? b : a;
-}
-
-long maxl(long a, long b) {
-  return a > b ? a : b;
-}
-
-
-// /* Use operator string to see which operation to perform */
-// lispval eval_op(lispval x, char* op, lispval y) {
-
-//   /* If either value is an error return it */
-//   if (x.type == LISPVAL_ERR) { return x; }
-//   if (y.type == LISPVAL_ERR) { return y; }
-
-//   /* Otherwise do maths on the number values */
-//   if (strcmp(op, "+") == 0) { return lispval_num(x.num + y.num); }
-//   if (strcmp(op, "-") == 0) { return lispval_num(x.num - y.num); }
-//   if (strcmp(op, "*") == 0) { return lispval_num(x.num * y.num); }
-//   if (strcmp(op, "%") == 0) { return lispval_num(x.num % y.num); }
-//   if (strcmp(op, "^") == 0) { return lispval_num(powl(x.num, y.num)); }
-//   if (strcmp(op, "min") == 0) { return lispval_num(minl(x.num, y.num)); }
-//   if (strcmp(op, "max") == 0) { return lispval_num(maxl(x.num, y.num)); }
-//   if (strcmp(op, "/") == 0) { 
-//     /* If second operand is zero return error */
-//     return y.num == 0
-//       ? lispval_err(LISPERR_DIV_ZERO)
-//       : lispval_num(x.num / y.num);
-//   }
-//   return lispval_err(LISPERR_BAD_OP);
-// }
-
-// lispval eval(mpc_ast_t* t) {
-
-  
-//   /* If tagged as number return it directly. */
-//   if (strstr(t->tag, "number")) {
-//     /* Check if there is some error in conversion */
-//     errno = 0;
-//     long x = strtol(t->contents, NULL, 10);
-//     return errno != ERANGE ? lispval_num(x) : lispval_err(LISPERR_BAD_NUM);
-//   }
-
-//   /* The operator is always second child. */
-//   char* op = t->children[1]->contents;
-
-//   /* We store the third child in `x` */
-//   lispval x = eval(t->children[2]);
-
-//   /* Iterate the remaining children and combining. */
-//   int i = 3;
-//   while (strstr(t->children[i]->tag, "expr")) {
-//     x = eval_op(x, op, eval(t->children[i]));
-//     i++;
-//   }
-
-//   return x;
-// }
-
-
-
-
-
 void evalAndPrint(char* input, mpc_parser_t* parser) {
   /* Attempt to Parse the user Input */
   mpc_result_t r;
   if (mpc_parse("<stdin>", input, parser, &r)) {
-    lispval* x = lispval_read(r.output);
+    lispval* x = lispval_eval(lispval_read(r.output));
     lispval_println(x);
     lispval_del(x);
     //mpc_ast_print(r.output);    //print AST
